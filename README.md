@@ -1,3 +1,3 @@
 <div align="center">
-    <h1>tinytinytinylog.c (tttl)</h1>
+    <h1>tinytinytinylog.h (tttl.h)</h1>
 </div>
