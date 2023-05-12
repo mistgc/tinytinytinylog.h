@@ -72,6 +72,7 @@ typedef struct TTTL_LogEvent {
 } TTTL_LogEvent_t;
 
 void tttl_log_event_set_data(struct TTTL_LogEvent *self, void *data);
+void tttl_log_event_init_time(struct TTTL_LogEvent *self);
 
 typedef void (*TTTL_LogFn)(struct TTTL_LogEvent *ev);
 
@@ -106,6 +107,13 @@ void tttl_log_add_file_callback(const char* file_path);
 
 void tttl_log_event_set_data(struct TTTL_LogEvent *self, void *data) {
     self->data = data;
+}
+
+void tttl_log_event_init_time(struct TTTL_LogEvent *self) {
+    if (!self->time) {
+        time_t t = time(NULL);
+        self->time = localtime(&t);
+    }
 }
 
 // Log implementation
@@ -159,6 +167,9 @@ void tttl_log_log(enum TTTL_LogLevel level,
         .file = file,
         .line = line,
     };
+
+    tttl_log_event_init_time(&ev);
+
     if (tttl_log.mode == TTTL_LOG_MODE_ASYNC)
         tttl_mutex_lock(&tttl_log.mutex);
 
