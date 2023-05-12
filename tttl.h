@@ -119,8 +119,8 @@ void tttl_log_event_init_time(struct TTTL_LogEvent *self) {
 // Log implementation
 
 static void tttl_logfn_stdout(struct TTTL_LogEvent *ev) {
-    char buf[16];
-    buf[strftime(buf, sizeof(buf), "%H:%M:%S", ev->time)] = '\0';
+    char buf[32];
+    buf[strftime(buf, sizeof(buf), "%F %T", ev->time)] = '\0';
 #ifdef TTTL_LOG_USE_COLOR
     fprintf(
         (FILE *)ev->data, "%s %s%-5s\x1b[0m \x1b[90m%s:%d:\x1b[0m ",
@@ -139,8 +139,8 @@ static void tttl_logfn_stdout(struct TTTL_LogEvent *ev) {
 }
 
 static void tttl_logfn_file(struct TTTL_LogEvent *ev) {
-    char buf[16];
-    buf[strftime(buf, sizeof(buf), "%H:%M:%S", ev->time)] = '\0';
+    char buf[32];
+    buf[strftime(buf, sizeof(buf), "%F %T", ev->time)] = '\0';
     fprintf(
         (FILE *)ev->data, "%s %-5s %s:%d ",
         buf, tttl_log_level_string[ev->level],
