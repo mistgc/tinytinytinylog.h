@@ -8,11 +8,17 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <assert.h>
-#include <threads.h>
+#include <string.h>
 
 #ifndef TTTL_MAX_CALLBACKS
 #define TTTL_MAX_CALLBACKS 64
 #endif // TTTL_MAX_CALLBACKS
+
+#ifndef TTTL_MAX_FILE_LINE
+#define TTTL_MAX_FILE_LINE (1<<12) // 4096
+#endif // TTTL_MAX_FILE_LINE
+
+#define PATH_SEPARATOR '/'
 
 #define tttl_malloc(s) malloc(s)
 #define tttl_free(p) free(p)
@@ -53,7 +59,7 @@ static const char *tttl_log_level_color[] = {
   "\x1b[94m", "\x1b[36m", "\x1b[32m", "\x1b[33m", "\x1b[31m", "\x1b[35m"
 };
 #endif // TTTL_LOG_USE_COLOR
-       //
+
 typedef struct TTTL_Mutex {
     atomic_uint value;
 } TTTL_Mutex_t;
@@ -73,21 +79,38 @@ typedef struct TTTL_LogEvent {
 
 void tttl_log_event_set_data(struct TTTL_LogEvent *self, void *data);
 void tttl_log_event_init_time(struct TTTL_LogEvent *self);
+bool tttl_log_event_is_same_day(struct TTTL_LogEvent *self);
+/* private:
+ *     bool tttl_log_event_maybe_update_log_file(struct TTTL_LogEvent *self);
+ */
 
 typedef void (*TTTL_LogFn)(struct TTTL_LogEvent *ev);
+typedef void *(*TTTL_Fn)(void *data);
 
 typedef struct TTTL_Callback {
     enum TTTL_LogLevel level;
-    TTTL_LogFn fn;
+    TTTL_LogFn logfn;
+    TTTL_Fn fn;
     void *data;
 } TTTL_Callback_t;
+
+typedef struct TTTL_LogFile {
+    const char *file_path;
+    char *file_name;
+    int index;
+    int max_line;
+    int count_line;
+    FILE *fp;
+} TTTL_LogFile_t;
+
+void tttl_log_file_close(struct TTTL_LogFile *self);
 
 typedef struct TTTL_Log {
     enum TTTL_LogLevel level;
     int mode;
     bool quiet;
     struct TTTL_Mutex mutex;
-    struct TTTL_Callback callback[TTTL_MAX_CALLBACKS];
+    struct TTTL_Callback callbacks[TTTL_MAX_CALLBACKS];
     void *data;
 } TTTL_Log_t;
 
@@ -98,8 +121,9 @@ void tttl_log_log(enum TTTL_LogLevel level,
 void tttl_log_set_quiet(bool enable);
 void tttl_log_set_mode(enum TTTL_LogMode mode);
 void tttl_log_set_level(enum TTTL_LogLevel level);
-void tttl_log_add_callback(struct TTTL_Callback callback);
-void tttl_log_add_file_callback(const char* file_path);
+bool tttl_log_add_callback(struct TTTL_Callback callback);
+bool tttl_log_add_file_callback(const char* file_path, enum TTTL_LogLevel level);
+void tttl_log_close();
 
 #ifdef TTTL_IMPLEMENTATION
 
@@ -114,6 +138,87 @@ void tttl_log_event_init_time(struct TTTL_LogEvent *self) {
         time_t t = time(NULL);
         self->time = localtime(&t);
     }
+}
+
+bool tttl_log_event_is_same_day(struct TTTL_LogEvent *self) {
+    time_t t = time(NULL);
+    struct tm *time = self->time;
+    struct tm *now = localtime(&t);
+
+    if (!strncmp(time->tm_zone, now->tm_zone, sizeof(now->tm_zone)) &&
+        time->tm_year == now->tm_year &&
+        time->tm_mon == now->tm_mon &&
+        time->tm_mday == now->tm_mday) {
+
+        // tttl_free(now);
+        return true;
+    }
+    // tttl_free(now);
+    return false;
+}
+
+static bool tttl_log_event_maybe_update_log_file(struct TTTL_LogEvent *self) {
+    struct TTTL_LogFile *log_file = self->data;
+
+    if (log_file->file_name == NULL) {
+        char buf[256];
+        buf[strftime(buf, sizeof(buf), "%F", self->time)] = '\0';
+        buf[sprintf(buf, "%s.log", buf)] = '\0';
+        char *file_name = strdup(buf);
+        sprintf(buf, "%s%c%s", log_file->file_path, PATH_SEPARATOR, file_name);
+        FILE *fp = fopen(buf, "a");
+
+        log_file->file_name = file_name;
+        log_file->fp = fp;
+
+        return true;
+    }
+
+    if (tttl_log_event_is_same_day(self)) {
+        if (log_file->count_line >= log_file->max_line) {
+            fclose(log_file->fp);
+            log_file->index++;
+
+            char buf[256];
+            sprintf(buf, "%s%c%s.%d", log_file->file_path,
+                    PATH_SEPARATOR, log_file->file_name,
+                    log_file->index);
+            FILE *fp = fopen(buf, "a");
+
+            log_file->fp = fp;
+            log_file->count_line = 0;
+            return true;
+        }
+        return false;
+    } else {
+        tttl_free(log_file->file_name);
+        fclose(log_file->fp);
+
+        char buf[256];
+        buf[strftime(buf, sizeof(buf), "%F", self->time)] = '\0';
+        buf[sprintf(buf, "%s.log", buf)] = '\0';
+        char *file_name = strdup(buf);
+        sprintf(buf, "%s%c%s", log_file->file_path, PATH_SEPARATOR, log_file->file_name);
+        FILE *fp = fopen(buf, "a");
+
+        log_file->file_name = file_name;
+        log_file->fp = fp;
+
+        return true;
+    }
+}
+
+// Log File implementation
+
+void tttl_log_file_close(struct TTTL_LogFile *self) {
+    assert(self != NULL);
+    if (self->file_name != NULL) {
+        tttl_free(self->file_name);
+    }
+    if (self->fp != NULL) {
+        fclose(self->fp);
+    }
+    tttl_free(self);
 }
 
 // Log implementation
@@ -139,15 +244,24 @@ static void tttl_logfn_stdout(struct TTTL_LogEvent *ev) {
 }
 
 static void tttl_logfn_file(struct TTTL_LogEvent *ev) {
+    tttl_log_event_maybe_update_log_file(ev);
+    struct TTTL_LogFile *log_file = ev->data;
+    FILE *fp = log_file->fp;
     char buf[32];
     buf[strftime(buf, sizeof(buf), "%F %T", ev->time)] = '\0';
     fprintf(
-        (FILE *)ev->data, "%s %-5s %s:%d ",
-        buf, tttl_log_level_string[ev->level],
+        fp, "%s %-5s %s:%d ", buf,
+        tttl_log_level_string[ev->level],
         ev->file, ev->line);
-    vfprintf((FILE *)ev->data, ev->fmt, ev->ap);
-    fprintf((FILE *)ev->data, "\n");
-    fflush((FILE *)ev->data);
+    vfprintf(fp, ev->fmt, ev->ap);
+    fprintf(fp, "\n");
+    fflush(fp);
+    log_file->count_line++;
+}
+
+static void *tttl_fn_handle_logfn_file(void *data) {
+    struct TTTL_LogFile *f = data;
+    tttl_log_file_close(f);
 }
 
 static struct TTTL_Log tttl_log = {
@@ -180,12 +294,12 @@ void tttl_log_log(enum TTTL_LogLevel level,
         va_end(ev.ap);
     }
 
-    for (int i = 0; i < TTTL_MAX_CALLBACKS && tttl_log.callback[i].fn; i++) {
-        struct TTTL_Callback *callback = &tttl_log.callback[i];
+    for (int i = 0; i < TTTL_MAX_CALLBACKS && tttl_log.callbacks[i].logfn; i++) {
+        struct TTTL_Callback *callback = &tttl_log.callbacks[i];
         if (level >= callback->level) {
             tttl_log_event_set_data(&ev, callback->data);
             va_start(ev.ap, fmt);
-            callback->fn(&ev);
+            callback->logfn(&ev);
             va_end(ev.ap);
         }
     }
@@ -206,7 +320,44 @@ void tttl_log_set_level(enum TTTL_LogLevel level) {
     tttl_log.level = level;
 }
 
-void tttl_log_add_file_callback(const char *file_path) {
+bool tttl_log_add_callback(struct TTTL_Callback callback) {
+    for (int i = 0; i < TTTL_MAX_CALLBACKS; i++) {
+        if (!tttl_log.callbacks[i].logfn) {
+            tttl_log.callbacks[i] = callback;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool tttl_log_add_file_callback(const char* file_path, enum TTTL_LogLevel level) {
+    struct TTTL_LogFile *log_file = (struct TTTL_LogFile *)tttl_malloc(sizeof(struct TTTL_LogFile));
+
+    log_file->file_path = file_path;
+    log_file->file_name = NULL;
+    log_file->index = 0;
+    log_file->max_line = TTTL_MAX_FILE_LINE;
+    log_file->count_line = 0;
+    log_file->fp = NULL;
+
+    struct TTTL_Callback callback = {
+        .level = level,
+        .logfn = tttl_logfn_file,
+        .fn = tttl_fn_handle_logfn_file,
+        .data = log_file,
+    };
+
+    tttl_log_add_callback(callback);
+
+    return true;
+}
+
+void tttl_log_close() {
+    for (int i = 0; i < TTTL_MAX_CALLBACKS && tttl_log.callbacks[i].fn; i++) {
+        struct TTTL_Callback *callback = &tttl_log.callbacks[i];
+        callback->fn(callback->data);
+    }
 }
 
 // Mutex implementation
