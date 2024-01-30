@@ -3,7 +3,10 @@
 
 #include <time.h>
 #include <stdio.h>
+#ifndef __cplusplus
+/* improve compatibility for C++ project */
 #include <stdatomic.h>
+#endif // __cplusplus
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -60,9 +63,26 @@ static const char *tttl_log_level_color[] = {
 };
 #endif // TTTL_LOG_USE_COLOR
 
+#ifndef __cplusplus
 typedef struct TTTL_Mutex {
-    atomic_uint value;
+    _Atomic int value;
 } TTTL_Mutex_t;
+#else
+/*
+ * Because C++ doesn't have the Keyword '_Atomic',
+ * here has to hide members of the structure.
+ *
+ * DON'T WORRY!!!
+ * All associated implementations are in the .c file.
+ *
+ * If you use this log library in your C++ project,
+ * you just create a .c file in your project.
+ * And put the "#define TTTL_IMPLEMENTATION" line
+ * before including the "tttl.h". Then compile
+ * the .c file into .o file and link it to your project.
+ */
+typedef struct TTTL_Mutex {} TTTL_Mutex_t;
+#endif //__cplusplus
 
 void tttl_mutex_lock(struct TTTL_Mutex *self);
 void tttl_mutex_unlock(struct TTTL_Mutex *self);

@@ -5,6 +5,12 @@
 
 ## Usage
 
+ **If you use this log library in your C++ project,
+ you just create a .c file in your project.
+ And put the `#define TTTL_IMPLEMENTATION` line
+ before including the "tttl.h". Then compile
+ the .c file into .o file and link it to your project.**
+
 ```c
 #define TTTL_IMPLEMENTATION // stb style header file needs
 #define TTTL_LOG_USE_COLOR  // enable colorful output
