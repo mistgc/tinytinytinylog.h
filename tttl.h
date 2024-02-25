@@ -12,6 +12,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <string.h>
+#include <stdint.h>
 
 #ifndef TTTL_MAX_CALLBACKS
 #define TTTL_MAX_CALLBACKS 64
@@ -165,8 +166,7 @@ bool tttl_log_event_is_same_day(struct TTTL_LogEvent *self) {
     struct tm *time = self->time;
     struct tm *now = localtime(&t);
 
-    if (!strncmp(time->tm_zone, now->tm_zone, sizeof(now->tm_zone)) &&
-        time->tm_year == now->tm_year &&
+    if (time->tm_year == now->tm_year &&
         time->tm_mon == now->tm_mon &&
         time->tm_mday == now->tm_mday) {
 
